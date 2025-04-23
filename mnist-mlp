@@ -8,4 +8,112 @@ from sklearn.preprocessing import StandardScaler  # 导入StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm  # 引入tqdm库
 
+# 1. 加载数据集
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"使用的设备: {device}")
+
+train_data = pd.read_csv(r'C:\Users\12p994\Downloads\data_6k_.csv', header=0)
+test_data = pd.read_csv(r'C:\Users\12994\Downloads\data_test_.csv', header=0)
+
+X_train = train_data.iloc[:, :-1].values  # 取前784列作为特征
+y_train = train_data.iloc[:, -1].values   # 最后一列为标签
+
+X_test = test_data.iloc[:, :-1].values  # 取前784列作为特征
+y_test = test_data.iloc[:, -1].values   # 最后一列为标签
+
+# 2. 使用StandardScaler进行标准化
+scaler = StandardScaler()
+
+# 标准化训练数据
+X_train = scaler.fit_transform(X_train)
+
+# 使用训练集的均值和标准差来标准化测试集
+X_test = scaler.transform(X_test)
+
+# 转换为PyTorch的tensor格式
+X_train = torch.tensor(X_train, dtype=torch.float32)
+y_train = torch.tensor(y_train, dtype=torch.long)
+X_test = torch.tensor(X_test, dtype=torch.float32)
+y_test = torch.tensor(y_test, dtype=torch.long)
+
+# 3. 创建MLP网络（784*512*128*10），并加入Dropout防止过拟合
+# 建立一个四层感知机网络
+class MLP(nn.Module):  # 继承 torch 的 Module
+    def __init__(self):
+        super(MLP, self).__init__()
+        # 初始化三层神经网络 两个全连接的隐藏层，一个输出层
+        self.fc1 = nn.Linear(784, 512) 
+        self.fc2 = nn.Linear(512, 128)  
+        self.fc3 = nn.Linear(128, 10)  
+        self.dropout = nn.Dropout(0.5)  # 加入 Dropout 防止过拟合
+        #784->512->128->10
+    def forward(self, din):
+        # 前向传播， 输入值：din, 返回值 dout
+        din = din.view(-1, 28 * 28)  # 将一个多行的Tensor,拼接成一行
+        dout = F.relu(self.fc1(din))  # 使用 relu 激活函数
+        dout = self.dropout(dout)  # 应用 Dropout
+        dout = F.relu(self.fc2(dout))
+        dout = self.dropout(dout)  # 再应用 Dropout
+        dout = self.fc3(dout)  # 输出层
+        return dout
+
+# 4. 训练和评估函数
+def train_and_evaluate(model, X_train, y_train, X_test, y_test, epochs=10, batch_size=64):
+    model.to(device)  # 将模型移到GPU或CPU
+
+    # 创建数据加载器
+    train_dataset = TensorDataset(X_train, y_train)
+    test_dataset = TensorDataset(X_test, y_test)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-4)  # L2正则化
+
+    # 训练
+    model.train()
+    for epoch in range(epochs):
+        running_loss = 0.0
+        for inputs, labels in tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs}", unit="batch"):
+            inputs, labels = inputs.to(device), labels.to(device)  # 将数据移动到设备
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+            running_loss += loss.item()
+
+        # 打印每个epoch的损失
+        print(f"Epoch {epoch + 1}, Loss: {running_loss / len(train_loader)}")
+
+    # 测试
+    model.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for inputs, labels in tqdm(test_loader, desc="Testing", unit="batch"):
+            inputs, labels = inputs.to(device), labels.to(device)  # 将数据移动到设备
+            outputs = model(inputs)
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+
+    accuracy = correct / total
+    return accuracy
+
+# 5. 独立运行多次并计算准确率
+accuracies_mlp_1 = []
+
+for _ in range(10):  # 独立运行10次
+    model_1 = MLP()  # 使用新的 MLP 网络架构
+    accuracy_1 = train_and_evaluate(model_1, X_train, y_train, X_test, y_test)
+    print(f"每次准确率: {accuracy_1}")
+    accuracies_mlp_1.append(accuracy_1)
+
+# 输出结果
+print(f"MLP 1 每次准确率: {accuracies_mlp_1}")
+print(f"MLP 1 平均准确率: {np.mean(accuracies_mlp_1)} ")
+
+
 
